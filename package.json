@@ -1,0 +1,5 @@
+{
+  "name": "worshipsetlist-monorepo",
+  "private": true,
+  "description": "Repository root. The Next.js app lives in chord-sheets/; Vercel uses vercel.json to build there."
+}
