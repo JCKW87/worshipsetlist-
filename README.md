@@ -1,11 +1,11 @@
 # worshipsetlist
 
-Single **Next.js** app (static export): build a consolidated **chord chart PDF** in the browser—no server APIs, no URL import, no Vercel “Root Directory” subfolder setup.
+Single **Next.js** app: build a consolidated **chord chart PDF** in the browser—no server APIs, no URL import. Leave **Root Directory** empty (repo root).
 
 ## Deploy (Vercel)
 
-1. Connect this repo; leave **Root Directory** empty (repository root).
-2. Default **Framework**: Next.js, **Build**: `npm run build`, **Output**: static (`out/` is produced automatically).
+1. Connect this repo; **Root Directory** empty (repository root).
+2. **Framework**: Next.js (auto). **Build**: `npm run build`. Do **not** override **Output Directory** unless you know you need to—leave it default for Next.js.
 
 No environment variables are required.
 
@@ -18,14 +18,12 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-## Preview the static build locally
+## Preview production build locally
 
 ```bash
 npm run build
-npx --yes serve@14 out
+npm start
 ```
-
-(`next start` is for non-export apps; this project uses `output: "export"`.)
 
 ## Tests
 
