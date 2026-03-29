@@ -1,35 +1,34 @@
-# worshipsetlist-
+# worshipsetlist
 
-Monorepo: the Next.js **Chord book PDF** app lives in [`chord-sheets/`](chord-sheets/).
+Single **Next.js** app (static export): build a consolidated **chord chart PDF** in the browser—no server APIs, no URL import, no Vercel “Root Directory” subfolder setup.
 
-## Deploying on Vercel (required settings)
+## Deploy (Vercel)
 
-Vercel detects **Next.js** from the `package.json` that contains the `next` dependency. In this repo that file is only under **`chord-sheets/package.json`**, not at the repository root.
+1. Connect this repo; leave **Root Directory** empty (repository root).
+2. Default **Framework**: Next.js, **Build**: `npm run build`, **Output**: static (`out/` is produced automatically).
 
-**You must set the Vercel project Root Directory to `chord-sheets`:**
-
-1. Vercel → your project → **Settings** → **General**.
-2. **Root Directory** → **Edit** → set to **`chord-sheets`** (not empty, not `.`).
-3. Save. **Redeploy** the latest commit.
-
-Leave **Install Command** and **Build Command** as the defaults (`npm install` / `npm ci` and `npm run build`). Framework should stay **Next.js**.
-
-If Root Directory is left at the repo root, Vercel will not find `next` in a root `package.json` and you’ll see: *“No Next.js version detected…”*.
-
-### Environment variables (optional)
-
-- `ALLOWED_FETCH_HOSTS` — comma-separated hostnames allowed for “Import from URL”. If unset, server fetch is disabled (paste-only still works).
+No environment variables are required.
 
 ## Local development
 
 ```bash
-cd chord-sheets
 npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`.
+Open [http://localhost:3000](http://localhost:3000).
 
-## “Not found” when using Import from URL
+## Preview the static build locally
 
-That usually means the **remote page** returned HTTP 404 (wrong link, moved page, or blocked path). The app surfaces this as `Fetch failed: HTTP 404`. Fix the URL or paste the chart text instead.
+```bash
+npm run build
+npx --yes serve@14 out
+```
+
+(`next start` is for non-export apps; this project uses `output: "export"`.)
+
+## Tests
+
+```bash
+npm test
+```

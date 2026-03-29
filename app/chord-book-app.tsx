@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { transposeChordProText } from "@/lib/chords/chordpro";
+import { buildChordBookPdf } from "@/lib/pdf/buildChordBookPdf";
 import {
   LICENSE_LABELS,
   LICENSE_TYPES,
@@ -11,12 +12,6 @@ import {
 function randomId(): string {
   return crypto.randomUUID();
 }
-
-export type FetchedMeta = {
-  at: string;
-  hostname: string;
-  url: string;
-};
 
 export type SongRow = {
   id: string;
@@ -30,9 +25,6 @@ export type SongRow = {
   attributionAuthor: string;
   licenseName: string;
   citationUrl: string;
-  /** URL used only for allowlisted server fetch */
-  fetchUrl: string;
-  lastFetched: FetchedMeta | null;
 };
 
 const emptySong = (): SongRow => ({
@@ -47,8 +39,6 @@ const emptySong = (): SongRow => ({
   attributionAuthor: "",
   licenseName: "",
   citationUrl: "",
-  fetchUrl: "",
-  lastFetched: null,
 });
 
 function previewText(s: SongRow): string {
@@ -56,6 +46,13 @@ function previewText(s: SongRow): string {
   const to = s.targetKey.trim();
   if (!from || !to) return s.content;
   return transposeChordProText(s.content, from, to);
+}
+
+function bodyForPdf(content: string, sourceKey: string, targetKey: string): string {
+  const from = sourceKey.trim();
+  const to = targetKey.trim();
+  if (from && to) return transposeChordProText(content, from, to);
+  return content;
 }
 
 function validateSongsForPdf(songs: SongRow[]): string | null {
@@ -83,7 +80,7 @@ function validateSongsForPdf(songs: SongRow[]): string | null {
 
 export default function ChordBookApp() {
   const [songs, setSongs] = useState<SongRow[]>(() => [emptySong()]);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
 
@@ -109,51 +106,6 @@ export default function ChordBookApp() {
     });
   };
 
-  const fetchUrl = async (id: string, url: string) => {
-    if (!url.trim()) {
-      setError("Enter a URL on an allowlisted host to fetch.");
-      return;
-    }
-    setBusy(id);
-    setError(null);
-    try {
-      const res = await fetch("/api/fetch-page", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: url.trim() }),
-      });
-      const data: {
-        error?: string;
-        text?: string;
-        fetchedUrl?: string;
-        hostname?: string;
-      } = await res.json();
-      if (!res.ok) throw new Error(data.error || "Fetch failed");
-      const fetchedUrl = data.fetchedUrl ?? url.trim();
-      let hostname = data.hostname;
-      if (!hostname) {
-        try {
-          hostname = new URL(fetchedUrl).hostname;
-        } catch {
-          hostname = "";
-        }
-      }
-      update(id, {
-        content: data.text ?? "",
-        fetchUrl: url.trim(),
-        lastFetched: {
-          at: new Date().toISOString(),
-          hostname,
-          url: fetchedUrl,
-        },
-      });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Fetch failed");
-    } finally {
-      setBusy(null);
-    }
-  };
-
   const downloadPdf = async () => {
     setError(null);
     const validationError = validateSongsForPdf(songs);
@@ -168,43 +120,27 @@ export default function ChordBookApp() {
       return;
     }
 
-    const payload = {
-      rightsConfirmed: true as const,
-      songs: songs
-        .filter((s) => s.title.trim() && s.targetKey.trim())
-        .map((s) => ({
-          title: s.title.trim(),
-          artist: s.artist.trim() || undefined,
-          sourceKey: s.sourceKey.trim() || undefined,
-          targetKey: s.targetKey.trim(),
-          content: s.content,
-          licenseType: s.licenseType,
-          attributionTitle: s.attributionTitle.trim() || undefined,
-          attributionAuthor: s.attributionAuthor.trim() || undefined,
-          licenseName: s.licenseName.trim() || undefined,
-          citationUrl: s.citationUrl.trim() || undefined,
-          fetchedMeta: s.lastFetched
-            ? {
-                fetchedAt: s.lastFetched.at,
-                hostname: s.lastFetched.hostname,
-                url: s.lastFetched.url,
-              }
-            : null,
-        })),
-    };
+    const pdfSongs = songs
+      .filter((s) => s.title.trim() && s.targetKey.trim())
+      .map((s) => ({
+        title: s.title.trim(),
+        artist: s.artist.trim() || undefined,
+        targetKey: s.targetKey.trim(),
+        sourceKey: s.sourceKey.trim() || undefined,
+        body: bodyForPdf(s.content, s.sourceKey, s.targetKey),
+        licenseType: s.licenseType,
+        attributionTitle: s.attributionTitle.trim() || undefined,
+        attributionAuthor: s.attributionAuthor.trim() || undefined,
+        licenseName: s.licenseName.trim() || undefined,
+        citationUrl: s.citationUrl.trim() || undefined,
+      }));
 
-    setBusy("pdf");
+    setBusy(true);
     try {
-      const res = await fetch("/api/pdf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        const data: { error?: string } = await res.json().catch(() => ({}));
-        throw new Error(data.error || "PDF failed");
-      }
-      const blob = await res.blob();
+      const bytes = await buildChordBookPdf(pdfSongs);
+      const copy = new Uint8Array(bytes.byteLength);
+      copy.set(bytes);
+      const blob = new Blob([copy], { type: "application/pdf" });
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = blobUrl;
@@ -214,7 +150,7 @@ export default function ChordBookApp() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "PDF failed");
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   };
 
@@ -223,37 +159,13 @@ export default function ChordBookApp() {
       <header className="space-y-3">
         <h1 className="text-3xl font-semibold tracking-tight">Chord book PDF</h1>
         <p className="text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-          Build one print-ready PDF from charts you are entitled to use:{" "}
-          <strong className="font-medium text-zinc-800 dark:text-zinc-200">
-            public-domain hymns
-          </strong>
-          ,{" "}
-          <strong className="font-medium text-zinc-800 dark:text-zinc-200">
-            your own or permissioned arrangements
-          </strong>
-          , or{" "}
-          <strong className="font-medium text-zinc-800 dark:text-zinc-200">
-            CC-licensed material
-          </strong>{" "}
-          with proper attribution. This app does not target commercial tab sites.
-          Use ChordPro-style chords (for example{" "}
+          Paste charts you have rights to use (public domain, your own work, or
+          CC with attribution). Use ChordPro-style chords (for example{" "}
           <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-xs dark:bg-zinc-900">
             [G]Amazing grace
           </code>
           ). Set source and target keys to transpose, or leave source key empty to
-          skip transposing.
-        </p>
-        <p className="text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
-          <strong className="font-medium text-zinc-800 dark:text-zinc-200">
-            Import from URL
-          </strong>{" "}
-          only works when your server administrator sets{" "}
-          <code className="rounded bg-zinc-100 px-1 font-mono text-xs dark:bg-zinc-900">
-            ALLOWED_FETCH_HOSTS
-          </code>{" "}
-          to specific hosts they trust (for example public-domain hymn sites). If
-          fetch is disabled or a host is not listed, paste text manually. You may
-          add an optional reference URL for citation on the PDF.
+          skip. PDFs are built <strong className="font-medium text-zinc-800 dark:text-zinc-200">in your browser</strong>—nothing is uploaded to a server.
         </p>
       </header>
 
@@ -277,10 +189,10 @@ export default function ChordBookApp() {
         <button
           type="button"
           onClick={downloadPdf}
-          disabled={busy !== null}
+          disabled={busy}
           className="rounded-full border border-zinc-300 px-4 py-2 text-sm font-medium dark:border-zinc-600 disabled:opacity-50"
         >
-          {busy === "pdf" ? "Building PDF…" : "Download PDF"}
+          {busy ? "Building PDF…" : "Download PDF"}
         </button>
       </div>
 
@@ -451,48 +363,10 @@ export default function ChordBookApp() {
               </div>
             ) : null}
 
-            <div className="mt-4 flex flex-col gap-2">
-              <span className="text-sm text-zinc-600 dark:text-zinc-400">
-                Import from URL (allowlisted hosts only)
-              </span>
-              <div className="flex flex-wrap gap-2">
-                <input
-                  className="min-w-[200px] flex-1 rounded-lg border border-zinc-300 bg-transparent px-3 py-2 font-mono text-sm dark:border-zinc-600"
-                  value={s.fetchUrl}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    update(s.id, {
-                      fetchUrl: v,
-                      lastFetched:
-                        s.lastFetched && v.trim() === s.lastFetched.url
-                          ? s.lastFetched
-                          : null,
-                    });
-                  }}
-                  placeholder="https://trusted-pd-or-cc-site.example/…"
-                />
-                <button
-                  type="button"
-                  onClick={() => fetchUrl(s.id, s.fetchUrl)}
-                  disabled={busy !== null}
-                  className="rounded-lg border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-600 disabled:opacity-50"
-                >
-                  {busy === s.id ? "Fetching…" : "Fetch"}
-                </button>
-              </div>
-              {s.lastFetched ? (
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                  Last imported from{" "}
-                  <span className="font-mono">{s.lastFetched.hostname}</span> at{" "}
-                  {new Date(s.lastFetched.at).toLocaleString()}
-                </p>
-              ) : null}
-            </div>
-
             {s.licenseType !== "cc_by" ? (
               <label className="mt-4 flex flex-col gap-1 text-sm">
                 <span className="text-zinc-600 dark:text-zinc-400">
-                  Reference URL for PDF (optional; citation only, not fetched)
+                  Reference URL for PDF (optional)
                 </span>
                 <input
                   className="rounded-lg border border-zinc-300 bg-transparent px-3 py-2 font-mono text-sm dark:border-zinc-600"

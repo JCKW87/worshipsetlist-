@@ -7,12 +7,6 @@ import {
 } from "pdf-lib";
 import type { LicenseType } from "@/lib/song/license";
 
-export type PdfFetchedMeta = {
-  fetchedAt: string;
-  hostname: string;
-  url: string;
-};
-
 export type PdfSongInput = {
   title: string;
   artist?: string;
@@ -24,7 +18,6 @@ export type PdfSongInput = {
   attributionAuthor?: string;
   licenseName?: string;
   citationUrl?: string;
-  fetchedMeta?: PdfFetchedMeta | null;
 };
 
 const A4_WIDTH = 595.28;
@@ -89,16 +82,9 @@ function rightsAndSourceLines(s: PdfSongInput): string[] {
       break;
     case "paste_only_no_fetch":
       lines.push(
-        "Rights: User-pasted chart (no server import). License selection is the user’s responsibility.",
+        "Rights: User-pasted chart. License selection is the user’s responsibility.",
       );
       break;
-  }
-
-  if (s.fetchedMeta) {
-    lines.push(
-      `Imported via allowlisted host: ${s.fetchedMeta.hostname} at ${s.fetchedMeta.fetchedAt}`,
-    );
-    lines.push(`Fetched URL: ${s.fetchedMeta.url}`);
   }
 
   const cite = s.citationUrl?.trim();
